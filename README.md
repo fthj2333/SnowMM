@@ -1,3 +1,7 @@
+> **Fork增强版维护分支：1.1.0-enhanced.4**
+> 独立增强版入口与安全部署修复见 [README_ENHANCED.md](README_ENHANCED.md)；[本次更新说明](docs/RELEASE_NOTES_ENHANCED_4.md)。
+> 此分支不是上游官方发行；上游PR #3已关闭，完整增强功能在Fork中维护。下方保留上游原项目介绍。
+
 # SnowMM · 尘白禁区 Mod 管理器
 
 [English](README_EN.md) · [更新记录](CHANGELOG.md) · [问题反馈](https://github.com/theresa-2333/SnowMM/issues)

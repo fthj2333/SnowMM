@@ -46,6 +46,19 @@ class LibraryManager(ModManager):
             raise ValueError("请先在增强设置选择游戏应用目录")
         self.deployment.validate(self.store.root)
 
+    def _deployment_ids(self):
+        """Recover before taking any enabled-state snapshot used by a new action."""
+        if not self.settings.deploy_path:
+            return set()
+        self._validate_roots()
+        deployment = self.deployment
+        if self.running_check():
+            if deployment.recovery_pending():
+                raise ValueError("部署事务尚未恢复，请退出游戏后重试；未保存新的部署请求")
+        else:
+            deployment.recover()
+        return deployment.enabled_ids()
+
     def character_dir(self, character):
         if character in {"基地", "杂项"}:
             return self.store.root / character
@@ -65,12 +78,14 @@ class LibraryManager(ModManager):
         return mod.files()
 
     def is_enabled(self, mod):
-        return mod.id in self.deployment.enabled_ids()
+        return mod.id in self._deployment_ids()
 
     def refresh_states(self):
         try:
-            ids = self.deployment.enabled_ids()
-            self.compatibility_errors = list(self.store.errors) + self.deployment.errors()
+            ids = self._deployment_ids()
+            self.compatibility_errors = list(self.store.errors) + (
+                self.deployment.errors() if self.settings.deploy_path else []
+            )
         except (OSError, ValueError, KeyError) as error:
             ids = set()
             self.compatibility_errors = [str(error)]
@@ -91,10 +106,12 @@ class LibraryManager(ModManager):
         return []
 
     def desired_ids(self):
-        return set(self.settings.pending_ids) if self.settings.has_pending else self.deployment.enabled_ids()
+        current = self._deployment_ids()
+        return set(self.settings.pending_ids) if self.settings.has_pending else current
 
     def _apply_ids(self, ids):
         self._validate_roots()
+        self._deployment_ids()
         mods = [m for m in self.mods if m.id in ids]
         if len(mods) != len(ids):
             raise ValueError("启用方案含已不存在的模组")
@@ -106,15 +123,15 @@ class LibraryManager(ModManager):
 
     def set_enabled(self, mods, enabled):
         selected = list(mods)
-        wanted = self.desired_ids()
-        for mod in selected:
-            if enabled:
-                if mod.conflict_group:
-                    wanted -= {m.id for m in self.mods if m.conflict_group == mod.conflict_group}
-                wanted.add(mod.id)
-            else:
-                wanted.discard(mod.id)
         try:
+            wanted = self.desired_ids()
+            for mod in selected:
+                if enabled:
+                    if mod.conflict_group:
+                        wanted -= {m.id for m in self.mods if m.conflict_group == mod.conflict_group}
+                    wanted.add(mod.id)
+                else:
+                    wanted.discard(mod.id)
             if self.running_check():
                 self.settings.pending_ids = sorted(wanted)
                 self.settings.has_pending = True
@@ -160,19 +177,20 @@ class LibraryManager(ModManager):
 
     def select_version(self, mod, revision):
         mod.version(revision)
-        if self.running_check():
+        wanted = self._deployment_ids()
+        if self.settings.deploy_path and self.running_check():
             if not self.settings.has_pending:
-                self.settings.pending_ids = sorted(self.deployment.enabled_ids())
+                self.settings.pending_ids = sorted(wanted)
             self.settings.pending_revisions[mod.id] = revision
             self.settings.has_pending = True
             self.settings.save()
             return "游戏运行中，版本切换已加入待办"
         old = mod.current_version
-        wanted = self.deployment.enabled_ids()
         mod.current_version = revision
         mod.hydrate()
         try:
-            self._apply_ids(wanted)
+            if self.settings.deploy_path:
+                self._apply_ids(wanted)
             self.store.save()
         except BaseException:
             mod.current_version = old
@@ -199,16 +217,17 @@ class LibraryManager(ModManager):
                 moves.append((mod, Path(mod.folder), expected))
         if not moves:
             return
-        if self.running_check():
+        if self.settings.deploy_path and self.running_check():
             for mod, source, _ in moves:
                 previous = LibraryMod.read(source)
                 mod.name = previous.name
                 mod.category_parts = previous.category_parts
             raise ValueError("游戏运行时暂不移动或改名模组目录，请退出后操作")
-        wanted = self.deployment.enabled_ids()
+        wanted = self._deployment_ids()
         moving_ids = {m.id for m, _, _ in moves}
         snapshots = {mod.id: LibraryMod.read(source) for mod, source, _ in moves}
-        self._apply_ids(wanted - moving_ids)
+        if self.settings.deploy_path:
+            self._apply_ids(wanted - moving_ids)
         completed = []
         try:
             for mod, source, destination in moves:
@@ -221,7 +240,8 @@ class LibraryManager(ModManager):
                 mod.hydrate()
                 completed.append((mod, source, destination))
                 mod.save()
-            self._apply_ids(wanted)
+            if self.settings.deploy_path:
+                self._apply_ids(wanted)
             for mod, _, _ in completed:
                 mod._layout_signature = (mod.name, tuple(mod.category_parts))
         except BaseException:
@@ -233,7 +253,8 @@ class LibraryManager(ModManager):
                 mod._layout_signature = (mod.name, tuple(mod.category_parts))
                 mod.hydrate()
                 mod.save()
-            self._apply_ids(wanted)
+            if self.settings.deploy_path:
+                self._apply_ids(wanted)
             raise
 
     def _groups(self, sources):
@@ -529,10 +550,11 @@ class LibraryManager(ModManager):
 
     def delete(self, mods, remove_files=True):
         selected = list(mods)
-        if self.running_check():
+        if self.settings.deploy_path and self.running_check():
             return 0, ["请退出游戏后再移至回收目录"]
         try:
-            self._apply_ids(self.deployment.enabled_ids() - {m.id for m in selected})
+            if self.settings.deploy_path:
+                self._apply_ids(self._deployment_ids() - {m.id for m in selected})
             trash = self.store.root / ".回收站"
             trash.mkdir(exist_ok=True)
             for mod in selected:

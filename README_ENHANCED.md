@@ -1,6 +1,8 @@
 # SnowMM 增强功能贡献版
 
-基于 SnowMM v1.1.0，提交 `bd7371bf8d95545d668c62cb005ac495bbc0121a`。增强版本标识1.1.0-enhanced.3。此文件集用于向上游提交功能补充，不代表上游已采纳或发布。
+基于 SnowMM v1.1.0，提交 `bd7371bf8d95545d668c62cb005ac495bbc0121a`。增强版本标识1.1.0-enhanced.4。本增强版在Fork的feature/enhanced-library分支独立维护，不是上游官方发行。上游PR #3已关闭，作者建议在Fork中维护，或将小型改进拆成独立PR。
+
+本版修复部署中断后误停用原启用模组，以及未配置部署目录时资源库改名、分类移动和回收受限的问题；详见docs/RELEASE_NOTES_ENHANCED_4.md。
 
 ## 功能
 

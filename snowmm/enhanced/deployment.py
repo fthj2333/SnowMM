@@ -126,6 +126,10 @@ class Deployment:
         except (OSError, ValueError):
             return False
 
+    def recovery_pending(self):
+        """Only owned transactions (or unsafe linked entries) require recovery."""
+        return any(linked(folder) or self._owned_transaction(folder) for folder in self.root.glob(".snowmm-txn-*"))
+
     def recover(self):
         """On an interrupted transaction, restore the prior manifest and owned files."""
         if not self.root.exists():
